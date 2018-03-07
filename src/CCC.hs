@@ -46,7 +46,7 @@ class Category k => CCC
   {- data Exp k :: * -> * -> * -}
   {- data Terminal k :: * -}
 
-  eval :: (Ct k a a, Ct k b b) => k (product (exp a b) a) b
+  eval :: (Ct k a a, Ct k b b) =>     k (product (exp a b) a) b
   curry :: (Ct k a a, Ct k b b, Ct k c c) => k (product a b) c -> k a (exp b c)
   uncurry :: (Ct k a a, Ct k b b, Ct k c c) => k a (exp b c) -> k (product a b) c
 

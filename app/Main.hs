@@ -60,7 +60,7 @@ instance CCC E (~~>) (,) () where
   unit = Unit
 
 class (HasBoolRep a, HasBoolRep b) => HasBoolRep2 a b
-class HasBoolRep a where
+class (KnownNat (Size a), KnownNat (Card a)) => HasBoolRep a where
   type Size a :: Nat -- how many bits need to rep it
   type Card a :: Nat --how many elements in the set
   size :: p a -> Sing (Size a)
@@ -134,18 +134,14 @@ uncur :: () => p (a, b) c
 uncur = undefined
 
 tak :: (sa ~ Size a, sb ~ Size b) => p (a,b) c -> Vec (sa + sb) x -> Vec sa x
-tak w = undefined -- take sa
+tak w = undefined
   where
-    fstParam :: p (a, b) c -> Proxy a
+    fstParam :: p (a, b) c -> Proxy (Size a)
     fstParam _ = Proxy
 
 drp :: (sa ~ Size a, sb ~ Size b) => p (a,b) c -> Vec (sa + sb) x -> Vec sb x
 drp _ = undefined
 
-
--- TODO vector utils
-{- takeS :: p n -> Vector (n + m) a -> Vector n a -}
-takeS = undefined
 
 
 
