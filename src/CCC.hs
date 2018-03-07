@@ -2,6 +2,9 @@
 {-# OPTIONS_GHC -fno-warn-unused-binds #-}
 
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE LiberalTypeSynonyms      #-}
+{-# LANGUAGE AllowAmbiguousTypes      #-}
+{-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -22,9 +25,11 @@ module CCC where
 
 import Prelude hiding ((*), (.), ($), id, fst, snd, curry, uncurry)
 import qualified Prelude
+import Data.Coerce
 import Control.Applicative
 import Control.Category
 import Data.String
+import GHC.Exts(Constraint)
 
 -- | A Cartesian-closed category is a Category k, together with...
 class Category k => CCC
@@ -36,18 +41,19 @@ class Category k => CCC
   , exp -> terminal
   , k -> exp
   where
+  type Ct k :: * -> * -> Constraint
   {- data Product k :: * -> * -> * -}
   {- data Exp k :: * -> * -> * -}
   {- data Terminal k :: * -}
 
-  eval :: k (product (exp a b) a) b
-  curry :: k (product a b) c -> k a (exp b c)
-  uncurry :: k a (exp b c) -> k (product a b) c
+  eval :: (Ct k a a, Ct k b b) => k (product (exp a b) a) b
+  curry :: (Ct k a a, Ct k b b, Ct k c c) => k (product a b) c -> k a (exp b c)
+  uncurry :: (Ct k a a, Ct k b b, Ct k c c) => k a (exp b c) -> k (product a b) c
 
-  fork :: k a c -> k a d -> k a (product c d)
-  exl :: k (product a b) a
-  exr :: k (product a b) b
-  unit :: k a terminal
+  fork :: (Ct k a a, Ct k c c, Ct k d d) =>  k a c -> k a d -> k a (product c d)
+  exl :: (Ct k a a, Ct k b b) => k (product a b) a
+  exr :: (Ct k a a, Ct k b b) => k (product a b) b
+  unit :: (Ct k a a, Ct k terminal terminal) => k a terminal
 
 
 -- We're going to implement HOAS (higher-order abstract syntax) for any 'CCC'.
@@ -88,7 +94,13 @@ data (~>) :: * -> * -> *
 data Unit :: * where
   Unit :: Unit
 
+-- type NoCt a = Coercible a a
+-- class NoCt
+
+
+
 instance CCC K (~>) (*) Unit where
+  type Ct K = Coercible
   eval = K Eval
   curry (K f) = K (Curry f)
   uncurry (K f) = K (Uncurry f)
@@ -166,7 +178,7 @@ instance Show UntypedAST where
 class CCC k exp product terminal => Cast k (exp :: * -> * -> *) (product :: * -> * -> * ) terminal x y | k -> exp, k -> product, k -> terminal where
   cast :: k x y
 
-instance (CCC k exp product terminal, Cast k exp product terminal b a, product b i ~ t) => Cast k exp product terminal t a where
+instance (CCC k exp product terminal, Ct k b b, Ct k a a, Ct k i i, Cast k exp product terminal b a, product b i ~ t) => Cast k exp product terminal t a where
   cast = cast . exl
 instance CCC k exp product terminal => Cast k exp product terminal a a where
   cast = id
@@ -182,11 +194,11 @@ instance CCC k exp product terminal => Cast k exp product terminal a a where
 --
 -- which looks a lot like a standard HOAS function encoding, except that we have
 -- stored the value of type @a@ in the "context" inside the function body.
-lam :: forall k e p t i a b . CCC k e p t => ((forall x. Cast k e p t x (p i a) => k x a) -> k (p i a) b) -> k i (e a b)
+lam :: forall k ct e p t i a b . (CCC k e p t, Ct k i i, Ct k a a, Ct k b b) => ((forall x. Cast k e p t x (p i a) => k x a) -> k (p i a) b) -> k i (e a b)
 lam f = curry (f (exr . (cast :: Cast k e p t x (p i a) => k x (p i a))  ))
 
 -- | Application is simpler since we don't need to modify the context.
-($) :: CCC k e p t => k i (e a b) -> k i a -> k i b
+($) :: (CCC k e p t, Ct k i i, Ct k (e a b) (e a b), Ct k a a, Ct k b b) => k i (e a b) -> k i a -> k i b
 ($) f x = eval <<< fork f x
 
 infixr 0 $
@@ -199,15 +211,15 @@ liftCCC :: CCC k e p t => k a b -> k i a -> k i b
 liftCCC = (.)
 
 -- | A term for extracting the first component of a product.
-fst :: CCC k e p t => k i (p a b) -> k i a
+fst :: (CCC k e p t, Ct k a a, Ct k b b) => k i (p a b) -> k i a
 fst = liftCCC exl
 
 -- | A term for extracting the second component of a product.
-snd :: CCC k e p t => k i (p a b) -> k i b
+snd :: (CCC k e p t, Ct k a a, Ct k b b) => k i (p a b) -> k i b
 snd = liftCCC exr
 
 -- | A term for constructing a product.
-(*) :: CCC k e p t => k i a -> k i b -> k i (p a b)
+(*) :: (CCC k e p t, Ct k i i, Ct k a a, Ct k b b) => k i a -> k i b -> k i (p a b)
 (*) = fork
 
 
@@ -217,6 +229,7 @@ newtype Hask a b = Hask { getHask :: a -> b }
 
 deriving instance Category Hask
 instance CCC Hask (->) (,) () where
+  type Ct Hask = Coercible
   eval = Hask (Prelude.uncurry (Prelude.$))
   curry (Hask f) =  Hask (Prelude.curry f)
   uncurry (Hask f) =  Hask (Prelude.uncurry f)

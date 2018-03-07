@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeOperators, TypeFamilies, DataKinds, GADTs, FlexibleContexts,
-MultiParamTypeClasses, RankNTypes,
+MultiParamTypeClasses, RankNTypes, ConstraintKinds,
 
 
 UndecidableInstances #-}
@@ -33,23 +33,24 @@ instance (HasBoolRep a, HasBoolRep b) => HasBoolRep (a ~~> b) where
 data E :: * -> * -> * where
   Id    :: E a a
   Comp  :: E b c -> E a b -> E a c
-  Eval  :: E (a ~~> b, a) b
+  Eval  :: (HasBoolRep a, HasBoolRep b) => E (a ~~> b, a) b
     -- R ^esult waits for a and a table, then treats as a number in table lookup
-  Curry :: E (a, b) c -> E a (b ~~> c)
+  Curry :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => E (a, b) c -> E a (b ~~> c)
     -- result waits for a, then makes a table with all poss b, using an evaluated form of the given expr
     -- which is (Vec (Size a + Size b) BoolExp -> Vec Size c BoolExp)
-  Uncurry :: E a (b ~~> c) -> E (a, b) c
+  Uncurry :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => E a (b ~~> c) -> E (a, b) c
     -- Given a and b, runs the given for a and looks up b in table (specialized version of Eval?)
-  Fst   :: E (a, b) a
-  Snd   :: E (a, b) b
-  Pair  :: E a b -> E a c -> E a (b,c)
-  Unit  :: E a ()
+  Fst   :: (HasBoolRep a, HasBoolRep b) => E (a, b) a
+  Snd   :: (HasBoolRep a, HasBoolRep b) => E (a, b) b
+  Pair  :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => E a b -> E a c -> E a (b,c)
+  Unit  :: HasBoolRep a => E a ()
 
 instance Category E where
   id  = Id
   (.) = Comp
 
 instance CCC E (~~>) (,) () where
+  type Ct E = HasBoolRep2
   eval = Eval
   curry = Curry
   uncurry = Uncurry
@@ -58,6 +59,7 @@ instance CCC E (~~>) (,) () where
   exr = Snd
   unit = Unit
 
+class (HasBoolRep a, HasBoolRep b) => HasBoolRep2 a b
 class HasBoolRep a where
   type Size a :: Nat -- how many bits need to rep it
   type Card a :: Nat --how many elements in the set

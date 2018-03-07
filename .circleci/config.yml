@@ -31,4 +31,4 @@ jobs:
 
       # - run: curl -sSL https://get.haskellstack.org/ | sh
       - run: stack setup
-      - run: stack build
+      - run: stack test
