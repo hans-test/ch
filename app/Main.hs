@@ -58,26 +58,17 @@ instance CCC E (~~>) (,) () where
   exr = Snd
   unit = Unit
 
--- inSize :: HasBoolRep a => e a b -> Int
--- inSizeFst :: HasBoolRep a => e (a, x) b -> Int
--- inSizeSnd :: HasBoolRep a => e (x, a) b -> Int
--- outize :: HasBoolRep b => e a b -> Int
---
 class HasBoolRep a where
   type Size a :: Nat -- how many bits need to rep it
   type Card a :: Nat --how many elements in the set
---   type Elem a :: * -- cardinality
---
-  {- rep :: Iso' a (Vec (Size a) BoolExp) -}
-
+  size :: p a -> Sing (Size a)
+  card :: p a -> Sing (Card a)
 instance HasBoolRep () where
   type Size () = 1
   type Card () = 1
-  {- rep = iso (pure True) (const ()) -}
 instance HasBoolRep Bool where
   type Size Bool = 1
   type Card Bool = 2^1
-  {- rep = iso pure head -}
 instance HasBoolRep Word8 where
   type Size Word8 = 8
   type Card Word8 = 2^8
@@ -107,25 +98,52 @@ evalBoolExp env = go
 
 --
 compile ::
-  {- (HasBoolRep a, HasBoolRep b) -}
-  {- => -}
-  E a b -> Vec (Size a) BoolExp -> Vec (Size b) BoolExp
+  (HasBoolRep a, HasBoolRep b)
+  =>
+  E a b -> V (Size a) -> V (Size b)
 compile Id = id
-compile (Comp f g) = compile f . compile g
--- compile e@Eval inp = _ f x -- TODO generate an list of booleans based on matrix mult
---   where
---     x = take (inSizeFst e) inp
---     f = drop (inSizeSnd e) inp
--- compile e@Fst = take' (Proxy::Size a)
+{- compile (Comp f g) = compile f . compile g -}
+compile e@Eval = \xs -> ev e xs
+compile e@(Curry f) = \xs -> cur e (compile f) xs
+compile e@(Uncurry f) = \xs -> uncur e (compile f) xs
 compile e@Fst = \x -> tak e x
 compile e@Snd = \x -> drp e x
 compile (Pair f g) = \x -> compile f x ++ compile g x
 compile Unit = const $ pure $ Bool True
 
+type V s = Vec s BoolExp
+type VS a = Vec (Size a) BoolExp
+
+ev
+  :: p (a ~~> b, a) b
+  -> V (Size (a ~~> b) + Size a)
+  -> V (Size b)
+ev = undefined
+
+cur :: () => p a (b ~~> c)
+  -> (V (Size a + Size b) -> V (Size c))
+  -> V (Size a)
+  -> V (Size (b ~~> c))
+cur = undefined
+uncur :: () => p (a, b) c
+  -> (V (Size a) -> V (Size (b ~~> c)))
+  -> V (Size a + Size b)
+  -> V (Size c)
+uncur = undefined
+
 tak :: (sa ~ Size a, sb ~ Size b) => p (a,b) c -> Vec (sa + sb) x -> Vec sa x
-tak _ = undefined
+tak w = undefined -- take sa
+  where
+    fstParam :: p (a, b) c -> Proxy a
+    fstParam _ = Proxy
+
 drp :: (sa ~ Size a, sb ~ Size b) => p (a,b) c -> Vec (sa + sb) x -> Vec sb x
 drp _ = undefined
+
+
+-- TODO vector utils
+{- takeS :: p n -> Vector (n + m) a -> Vector n a -}
+takeS = undefined
 
 
 
