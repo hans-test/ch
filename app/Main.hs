@@ -1,5 +1,5 @@
 {-# LANGUAGE TypeOperators, TypeFamilies, DataKinds, GADTs, FlexibleContexts,
-MultiParamTypeClasses,
+MultiParamTypeClasses, RankNTypes,
 
 
 UndecidableInstances #-}
@@ -8,6 +8,7 @@ import Prelude hiding ((.), id, take, drop, head, (++))
 import Data.Vector.Sized
 import qualified Data.Vector as V
 import GHC.TypeLits
+import Data.Singletons
 import Data.Word
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -71,11 +72,11 @@ class HasBoolRep a where
 instance HasBoolRep () where
   type Size () = 1
   type Card () = 1
-  rep = iso (pure True) (const ())
+  {- rep = iso (pure True) (const ()) -}
 instance HasBoolRep Bool where
   type Size Bool = 1
   type Card Bool = 2^1
-  rep = iso pure head
+  {- rep = iso pure head -}
 instance HasBoolRep Word8 where
   type Size Word8 = 8
   type Card Word8 = 2^8
@@ -105,8 +106,8 @@ evalBoolExp env = go
 
 --
 compile ::
-  (HasBoolRep a, HasBoolRep b)
-  =>
+  {- (HasBoolRep a, HasBoolRep b) -}
+  {- => -}
   E a b -> Vec (Size a) BoolExp -> Vec (Size b) BoolExp
 compile Id = id
 compile (Comp f g) = compile f . compile g
@@ -115,11 +116,13 @@ compile (Comp f g) = compile f . compile g
 --     x = take (inSizeFst e) inp
 --     f = drop (inSizeSnd e) inp
 -- compile e@Fst = take' (Proxy::Size a)
-compile Fst = take
-compile Snd = drop
+{- compile Fst = take' _ -}
+{- compile Snd = drop -}
 compile (Pair f g) = \x -> compile f x ++ compile g x
 compile Unit = const $ pure $ Bool True
 
+tak :: Sing n -> Vec (n + m) a -> Vec n a
+tak = undefined
 
 {- take_ :: (KnownNat m, KnownNat n) => Vec ((n :: Nat) + m) a -> Vec n a -}
 {- take_ = take -}
