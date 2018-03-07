@@ -8,12 +8,15 @@ import Data.Vector.Generic.Sized
 import qualified Data.Vector as V
 import GHC.TypeLits
 import Data.Word
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Proxy
 -- Goal: provide a ZKP of "(The byte sequence S applied to T yields R) and hashing s yields H" (S being the hidden quantity)
 
 type Vec = Vector V.Vector
+
 -- | A function, represented as a boolean matrix.
-newtype (~>) a b = F { runF :: Vec (Card a) (Vec (Size b) BoolExp) }
+newtype (~>) a b = F { runF :: (Vec (Card a * Size b) BoolExp) }
 
 instance (HasBoolRep a, HasBoolRep b) => HasBoolRep (a ~> b) where
   type Size (a ~> b) = Card a * Size b
@@ -63,6 +66,21 @@ instance (HasBoolRep a, HasBoolRep b) => HasBoolRep (a, b) where
 --
 type Name = String
 data BoolExp = Var Name | And BoolExp BoolExp | Or BoolExp BoolExp | Not BoolExp | Bool Bool
+
+type TotalMap k a = (a, Map k a)
+
+totalMapLookup :: Ord k => TotalMap k v -> k -> v
+totalMapLookup (z, m) k = maybe z id $ Map.lookup k m
+
+evalBoolExp :: TotalMap Name Bool -> BoolExp -> Bool
+evalBoolExp env = go
+  where
+    go (Bool x)  = x
+    go (Var n)   = totalMapLookup env n
+    go (Not a)   = not $ go a
+    go (And a b) = go a && go b
+    go (Or a b)  = go a || go b
+
 --
 compile ::
 
@@ -80,8 +98,8 @@ compile (Pair f g) = \x -> compile f x ++ compile g x
 compile Unit = const $ pure $ Bool True
 
 
-take_ :: (KnownNat m, KnownNat n) => Vec ((n :: Nat) + m) a -> Vec n a
-take_ = take
+{- take_ :: (KnownNat m, KnownNat n) => Vec ((n :: Nat) + m) a -> Vec n a -}
+{- take_ = take -}
 
 argFstSize :: E (a,x) b -> Proxy (Size a)
 argFstSize = const Proxy
