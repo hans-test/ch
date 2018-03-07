@@ -17,17 +17,18 @@ version: 2
 jobs:
   build:
     docker:
-      - image: base/archlinux
+      # - image: base/archlinux
+      - image: samdoshi/haskell-stack
     steps:
       - checkout
       # - run: wget https://www.stackage.org/stack/linux-x86_64-static -O /tmp/stack.gz
       # - run: gunzip /tmp/stack.gz && chmod +x /tmp/stack
       # - run: sudo mv /tmp/stack /usr/bin/stack
-      - run: yes | sudo pacman -Syy make
+      # - run: yes | sudo pacman -Syy make
       # yes | pacman -Syy tar
       # yes | pacman -Syy unzip
       # yes | pacman -Syy patch
 
-      - run: curl -sSL https://get.haskellstack.org/ | sh
+      # - run: curl -sSL https://get.haskellstack.org/ | sh
       - run: stack setup
       - run: stack build
