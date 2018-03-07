@@ -8,7 +8,7 @@ import Prelude hiding ((.), id, take, drop, head, (++))
 import Data.Vector.Sized
 import qualified Data.Vector as V
 import GHC.TypeLits
-import Data.Singletons
+import Data.Singletons hiding ((~~>))
 import Data.Word
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -22,22 +22,23 @@ import Control.Category
 type Vec = Vector
 
 -- | A function, represented as a boolean matrix.
-newtype (~>) a b = F { runF :: (Vec (Card a * Size b) BoolExp) }
+data (~~>) :: * -> * -> *
+--newtype (~~>) a b = F { runF :: (Vec (Card a * Size b) BoolExp) }
 
-instance (HasBoolRep a, HasBoolRep b) => HasBoolRep (a ~> b) where
-  type Size (a ~> b) = Card a * Size b
-  type Card (a ~> b) = Card b ^ Card a
-  rep = iso coerce coerce
+instance (HasBoolRep a, HasBoolRep b) => HasBoolRep (a ~~> b) where
+  type Size (a ~~> b) = Card a * Size b
+  type Card (a ~~> b) = Card b ^ Card a
+  {- rep = iso coerce coerce -}
 
 data E :: * -> * -> * where
   Id    :: E a a
   Comp  :: E b c -> E a b -> E a c
-  Eval  :: E (a ~> b, a) b
+  Eval  :: E (a ~~> b, a) b
     -- R ^esult waits for a and a table, then treats as a number in table lookup
-  Curry :: E (a, b) c -> E a (b ~> c)
+  Curry :: E (a, b) c -> E a (b ~~> c)
     -- result waits for a, then makes a table with all poss b, using an evaluated form of the given expr
     -- which is (Vec (Size a + Size b) BoolExp -> Vec Size c BoolExp)
-  Uncurry :: E a (b ~> c) -> E (a, b) c
+  Uncurry :: E a (b ~~> c) -> E (a, b) c
     -- Given a and b, runs the given for a and looks up b in table (specialized version of Eval?)
   Fst   :: E (a, b) a
   Snd   :: E (a, b) b
@@ -48,7 +49,7 @@ instance Category E where
   id  = Id
   (.) = Comp
 
-instance CCC E (~>) (,) () where
+instance CCC E (~~>) (,) () where
   eval = Eval
   curry = Curry
   uncurry = Uncurry
@@ -67,7 +68,7 @@ class HasBoolRep a where
   type Card a :: Nat --how many elements in the set
 --   type Elem a :: * -- cardinality
 --
-  rep :: Iso' a (Vec (Size a) BoolExp)
+  {- rep :: Iso' a (Vec (Size a) BoolExp) -}
 
 instance HasBoolRep () where
   type Size () = 1
@@ -116,21 +117,16 @@ compile (Comp f g) = compile f . compile g
 --     x = take (inSizeFst e) inp
 --     f = drop (inSizeSnd e) inp
 -- compile e@Fst = take' (Proxy::Size a)
-{- compile Fst = take' _ -}
-{- compile Snd = drop -}
+compile e@Fst = \x -> tak e x
+compile e@Snd = \x -> drp e x
 compile (Pair f g) = \x -> compile f x ++ compile g x
 compile Unit = const $ pure $ Bool True
 
-tak :: Sing n -> Vec (n + m) a -> Vec n a
-tak = undefined
+tak :: (sa ~ Size a, sb ~ Size b) => p (a,b) c -> Vec (sa + sb) x -> Vec sa x
+tak _ = undefined
+drp :: (sa ~ Size a, sb ~ Size b) => p (a,b) c -> Vec (sa + sb) x -> Vec sb x
+drp _ = undefined
 
-{- take_ :: (KnownNat m, KnownNat n) => Vec ((n :: Nat) + m) a -> Vec n a -}
-{- take_ = take -}
-
-argFstSize :: E (a,x) b -> Proxy (Size a)
-argFstSize = const Proxy
--- argSize :: E a b -> Proxy (Size a)
--- argSize = const Proxy
 
 
 compile' :: E () Bool -> BoolExp
