@@ -1,5 +1,5 @@
-{-# LANGUAGE TypeOperators, TypeFamilies, DataKinds, GADTs, FlexibleContexts,
-MultiParamTypeClasses, RankNTypes, ConstraintKinds, StandaloneDeriving, ScopedTypeVariables,
+{-# LANGUAGE TypeOperators, TypeFamilies, DataKinds, GADTs, FlexibleContexts, TypeApplications,
+MultiParamTypeClasses, RankNTypes, ConstraintKinds, StandaloneDeriving, ScopedTypeVariables,FlexibleInstances,
 
 UndecidableInstances #-}
 
@@ -15,7 +15,18 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Proxy
 import Control.Lens
-import CCC (CCC(..))
+import CCC (CCC(..)
+  , test1
+  , test2
+  , test3
+  , test4
+  , test5
+  , test6
+  , test7
+  , test8
+  , test9
+  , test10
+  )
 import Data.Coerce
 import Control.Category
 {- import Data.Sized -}
@@ -33,32 +44,35 @@ type Vec (n :: Nat) a = Vector n a
 data (~~>) :: * -> * -> *
 --newtype (~~>) a b = F { runF :: (Vec (Card a * Size b) BoolExp) }
 
-instance (HasBoolRep a, HasBoolRep b) => HasBoolRep (a ~~> b) where
+instance (HasBoolRep a, HasBoolRep b
+  , KnownNat (Card a * Size b)
+  , KnownNat (Card b ^ Card a)
+  ) => HasBoolRep (a ~~> b) where
   type Size (a ~~> b) = Card a * Size b
   type Card (a ~~> b) = Card b ^ Card a
   {- rep = iso coerce coerce -}
 
 data E :: * -> * -> * where
   Id    :: E a a
-  Comp  :: E b c -> E a b -> E a c
-  Eval  :: (HasBoolRep a, HasBoolRep b) => E (a ~~> b, a) b
+  Comp  :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => E b c -> E a b -> E a c
+  Eval  :: (HasBoolRep a, HasBoolRep b, HasBoolRep (a ~~> b)) => E (a ~~> b, a) b
     -- R ^esult waits for a and a table, then treats as a number in table lookup
-  Curry :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => E (a, b) c -> E a (b ~~> c)
+  Curry :: (HasBoolRep a, HasBoolRep b, HasBoolRep c, HasBoolRep (a, b)) => E (a, b) c -> E a (b ~~> c)
     -- result waits for a, then makes a table with all poss b, using an evaluated form of the given expr
     -- which is (Vec (Size a + Size b) BoolExp -> Vec Size c BoolExp)
-  Uncurry :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => E a (b ~~> c) -> E (a, b) c
+  Uncurry :: (HasBoolRep a, HasBoolRep b, HasBoolRep c, HasBoolRep (b ~~> c)) => E a (b ~~> c) -> E (a, b) c
     -- Given a and b, runs the given for a and looks up b in table (specialized version of Eval?)
   Fst   :: (HasBoolRep a, HasBoolRep b) => E (a, b) a
   Snd   :: (HasBoolRep a, HasBoolRep b) => E (a, b) b
   Pair  :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => E a b -> E a c -> E a (b,c)
   Unit  :: HasBoolRep a => E a ()
 
-instance Category E where
-  id  = Id
-  (.) = Comp
+{- instance Category E where -}
 
 instance CCC E (~~>) (,) () where
   type Ct E = HasBoolRep2
+  id  = Id
+  (.) = Comp
   eval = Eval
   curry = Curry
   uncurry = Uncurry
@@ -67,8 +81,12 @@ instance CCC E (~~>) (,) () where
   exr = Snd
   unit = Unit
 
+-- | A workarond for the 'Coercible as identity' hack in the CCC class.
 class (HasBoolRep a, HasBoolRep b) => HasBoolRep2 a b
-class () => HasBoolRep a where
+instance (HasBoolRep a, a ~ b) => HasBoolRep2 a b
+
+
+class (KnownNat (Size a), KnownNat (Card a)) => HasBoolRep a where
   type Size a :: Nat -- how many bits need to rep it
   type Card a :: Nat --how many elements in the set
   {- size :: Sing (Size a) -}
@@ -82,7 +100,7 @@ instance HasBoolRep Bool where
 instance HasBoolRep Word8 where
   type Size Word8 = 8
   type Card Word8 = 2^8
-instance (HasBoolRep a, HasBoolRep b) => HasBoolRep (a, b) where
+instance (HasBoolRep a, HasBoolRep b, KnownNat (Size a + Size b), KnownNat (Card a * Card b)) => HasBoolRep (a, b) where
   type Size (a, b) = Size a + Size b
   type Card (a, b) = Card a * Card b
 
@@ -95,7 +113,7 @@ data BoolExp = Var Name | And BoolExp BoolExp | Or BoolExp BoolExp | Not BoolExp
 type TotalMap k a = (a, Map k a)
 
 totalMapLookup :: Ord k => TotalMap k v -> k -> v
-totalMapLookup (z, m) k = maybe z id $ Map.lookup k m
+totalMapLookup (z, m) k = maybe z P.id $ Map.lookup k m
 
 evalBoolExp :: TotalMap Name Bool -> BoolExp -> Bool
 evalBoolExp env = go
@@ -111,8 +129,8 @@ compile ::
   (HasBoolRep a, HasBoolRep b)
   =>
   E a b -> V (Size a) -> V (Size b)
-compile Id = id
-{- compile (Comp f g) = compile f . compile g -}
+compile Id = P.id
+compile (Comp f g) = compile f P.. compile g
 compile e@Eval = \xs -> ev e xs
 compile e@(Curry f) = \xs -> cur e (compile f) xs
 compile e@(Uncurry f) = \xs -> uncur e (compile f) xs
@@ -125,31 +143,34 @@ type V (s :: Nat) = Vec s BoolExp
 -- type VS a = Vec (Size a) BoolExp
 
 ev
-  :: p (a ~~> b, a) b
+  :: forall p a b. (HasBoolRep a, HasBoolRep b, HasBoolRep (a ~~> b))
+  => p (a ~~> b, a) b
   -> V (Size (a ~~> b) + Size a)
   -> V (Size b)
-ev = undefined
+ev wh funcArg = (error "undefined ev") func arg
+  where
+    func = tak wh funcArg :: V (Size (a ~~> b))
+    arg  = drp wh funcArg :: V (Size a)
+    fL = natVal (Proxy @(Size (a ~~> b)))
+    aL = natVal (Proxy @(Size a))
 
-cur :: () => p a (b ~~> c)
+cur :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => p a (b ~~> c)
   -> (V (Size a + Size b) -> V (Size c))
   -> V (Size a)
   -> V (Size (b ~~> c))
 cur = undefined
-uncur :: () => p (a, b) c
+
+uncur :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => p (a, b) c
   -> (V (Size a) -> V (Size (b ~~> c)))
   -> V (Size a + Size b)
   -> V (Size c)
 uncur = undefined
 
-tak :: forall p a b c x. p (a,b) c -> Vec (Size a + Size b) x -> Vec (Size a) x
-tak = undefined
-{- tak w xs = take fstParam xs -}
-  {- where -}
-    {- fstParam :: Sing (Size a) -}
-    {- fstParam = size -}
+tak :: forall p a b c x. (HasBoolRep a, HasBoolRep b) => p (a,b) c -> Vec (Size a + Size b) x -> Vec (Size a) x
+tak wh = take
 
-drp :: (sa ~ Size a, sb ~ Size b) => p (a,b) c -> Vec (sa + sb) x -> Vec sb x
-drp _ = undefined
+drp :: forall p a b c x. (HasBoolRep a, HasBoolRep b) => p (a,b) c -> Vec (Size a + Size b) x -> Vec (Size b) x
+drp wh = drop
 
 
 
@@ -161,7 +182,7 @@ compile' x = {-index 0-}undefined $ compile x undefined{-[Bool True]-}
 main = error "TODO"
 
 
-
+tb = compile (test1 :: E () (Bool ~~> Bool))
 
 
 

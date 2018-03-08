@@ -27,12 +27,12 @@ import Prelude hiding ((*), (.), ($), id, fst, snd, curry, uncurry)
 import qualified Prelude
 import Data.Coerce
 import Control.Applicative
-import Control.Category
+import qualified Control.Category as C
 import Data.String
 import GHC.Exts(Constraint)
 
 -- | A Cartesian-closed category is a Category k, together with...
-class Category k => CCC
+class CCC
   k
   (exp :: * -> * -> *)
   (product :: * -> * -> *)
@@ -45,10 +45,12 @@ class Category k => CCC
   {- data Product k :: * -> * -> * -}
   {- data Exp k :: * -> * -> * -}
   {- data Terminal k :: * -}
+  id  :: () => k a a
+  (.) :: (Ct k a a, Ct k b b, Ct k c c) => k b c -> k a b -> k a c
 
-  eval :: (Ct k a a, Ct k b b) =>     k (product (exp a b) a) b
-  curry :: (Ct k a a, Ct k b b, Ct k c c) => k (product a b) c -> k a (exp b c)
-  uncurry :: (Ct k a a, Ct k b b, Ct k c c) => k a (exp b c) -> k (product a b) c
+  eval :: (Ct k a a, Ct k b b, Ct' k (exp a b)) =>     k (product (exp a b) a) b
+  curry :: (Ct k a a, Ct k b b, Ct k c c, Ct' k (product a b)) => k (product a b) c -> k a (exp b c)
+  uncurry :: (Ct k a a, Ct k b b, Ct k c c, Ct' k (exp b c)) => k a (exp b c) -> k (product a b) c
 
   fork :: (Ct k a a, Ct k c c, Ct k d d) =>  k a c -> k a d -> k a (product c d)
   exl :: (Ct k a a, Ct k b b) => k (product a b) a
@@ -86,9 +88,6 @@ data Lit = Num Integer | Bool Bool | String String
 -- | A 'CCC' instance for our untyped terms.
 newtype K a b = K UntypedAST
 
-instance Category K where
-  id = K Id
-  K f . K g = K (Compose f g)
 data (*)  :: * -> * -> *
 data (~>) :: * -> * -> *
 data Unit :: * where
@@ -98,9 +97,13 @@ data Unit :: * where
 -- class NoCt
 
 
+{- instance Category K where -}
 
 instance CCC K (~>) (*) Unit where
   type Ct K = Coercible
+  id = K Id
+  K f . K g = K (Compose f g)
+
   eval = K Eval
   curry (K f) = K (Curry f)
   uncurry (K f) = K (Uncurry f)
@@ -109,7 +112,7 @@ instance CCC K (~>) (*) Unit where
   exr = K Exr
   unit = K U
 instance IsBool Bool where
-  fromBool = id
+  fromBool = Prelude.id
 instance IsBool b => IsBool (K a b) where
   fromBool b = K (Lit (Bool b))
 instance IsString b => IsString (K a b) where
@@ -167,6 +170,8 @@ instance Show (K a b) where
 instance Show UntypedAST where
   show x = show (K x :: K () ())
 
+type Ct' k a = Ct k a a
+
 -- | We need to be able to insert terms based on the shape of the context.
 -- To make the type checker do this for us, we introduce a type class 'Cast'.
 --
@@ -178,7 +183,7 @@ instance Show UntypedAST where
 class CCC k exp product terminal => Cast k (exp :: * -> * -> *) (product :: * -> * -> * ) terminal x y | k -> exp, k -> product, k -> terminal where
   cast :: k x y
 
-instance (CCC k exp product terminal, Ct k b b, Ct k a a, Ct k i i, Cast k exp product terminal b a, product b i ~ t) => Cast k exp product terminal t a where
+instance (CCC k exp product terminal, Ct k b b, Ct k a a, Ct k i i, Ct' k (product b i), Cast k exp product terminal b a, product b i ~ t) => Cast k exp product terminal t a where
   cast = cast . exl
 instance CCC k exp product terminal => Cast k exp product terminal a a where
   cast = id
@@ -194,12 +199,16 @@ instance CCC k exp product terminal => Cast k exp product terminal a a where
 --
 -- which looks a lot like a standard HOAS function encoding, except that we have
 -- stored the value of type @a@ in the "context" inside the function body.
-lam :: forall k ct e p t i a b . (CCC k e p t, Ct k i i, Ct k a a, Ct k b b) => ((forall x. Cast k e p t x (p i a) => k x a) -> k (p i a) b) -> k i (e a b)
+lam :: forall k ct e p t i a b . (CCC k e p t, Ct k (p (e a b) a) (p (e a b) a), Ct k i i, Ct k a a, Ct k b b, Ct' k (p i a)) => ((forall x. (Ct' k x, Cast k e p t x (p i a)) => k x a) -> k (p i a) b) -> k i (e a b)
 lam f = curry (f (exr . (cast :: Cast k e p t x (p i a) => k x (p i a))  ))
 
 -- | Application is simpler since we don't need to modify the context.
-($) :: (CCC k e p t, Ct k i i, Ct k (e a b) (e a b), Ct k a a, Ct k b b) => k i (e a b) -> k i a -> k i b
+($) :: (CCC k e p t,  Ct' k (p (e a b) a), Ct k i i, Ct k (e a b) (e a b), Ct k a a, Ct k b b) => k i (e a b) -> k i a -> k i b
 ($) f x = eval <<< fork f x
+
+
+(<<<) = (.)
+(>>>) = flip (.)
 
 infixr 0 $
 
@@ -207,15 +216,15 @@ infixr 0 $
 --
 -- >>> liftCCC :: Hask a b -> Hask () a -> Hask () b
 -- >>> liftCCC :: K a b -> Vertex a -> Vertex b
-liftCCC :: CCC k e p t => k a b -> k i a -> k i b
+liftCCC :: (CCC k e p t, Ct' k a, Ct' k i, Ct' k b) => k a b -> k i a -> k i b
 liftCCC = (.)
 
 -- | A term for extracting the first component of a product.
-fst :: (CCC k e p t, Ct k a a, Ct k b b) => k i (p a b) -> k i a
+fst :: (CCC k e p t, Ct k a a, Ct k b b, Ct k (p a b) (p a b), Ct k i i) => k i (p a b) -> k i a
 fst = liftCCC exl
 
 -- | A term for extracting the second component of a product.
-snd :: (CCC k e p t, Ct k a a, Ct k b b) => k i (p a b) -> k i b
+snd :: (CCC k e p t, Ct k a a, Ct k b b, Ct k (p a b) (p a b), Ct k i i) => k i (p a b) -> k i b
 snd = liftCCC exr
 
 -- | A term for constructing a product.
@@ -227,9 +236,13 @@ snd = liftCCC exr
 newtype Hask a b = Hask { getHask :: a -> b }
   deriving (Functor, Applicative, Monad)
 
-deriving instance Category Hask
+{- deriving instance C.Category Hask -}
 instance CCC Hask (->) (,) () where
   type Ct Hask = Coercible
+
+  id = Hask Prelude.id
+  Hask f . Hask g = Hask (f Prelude.. g)
+
   eval = Hask (Prelude.uncurry (Prelude.$))
   curry (Hask f) =  Hask (Prelude.curry f)
   uncurry (Hask f) =  Hask (Prelude.uncurry f)
@@ -245,13 +258,13 @@ instance Num a => Num (Hask x a) where
   (*) = error "TODO"
   abs = error "TODO"
   signum = error "TODO"
-  fromInteger = pure . fromInteger
+  fromInteger = pure Prelude.. fromInteger
 -- Note: DerivingVia would help...
 instance IsString a => IsString (Hask x a) where
-  fromString = pure . fromString
+  fromString = pure Prelude.. fromString
 -- Note: DerivingVia would help...
 instance IsBool a => IsBool (Hask x a) where
-  fromBool = pure . fromBool
+  fromBool = pure Prelude.. fromBool
 
 -- Overload booleans too:
 class IsBool a where
@@ -264,7 +277,7 @@ runHask :: Hask () b -> b
 runHask (Hask f) = f ()
 
 asK :: K () b -> K () b
-asK = id
+asK = Prelude.id
 
 
 runK :: K () b -> UntypedAST
@@ -272,7 +285,7 @@ runK (K x) = x
 
 type Vertex = K ()
 vertex :: Vertex a -> Vertex a
-vertex = id
+vertex = Prelude.id
 
 {- debug = runHask -}
 debug = runK
