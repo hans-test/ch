@@ -15,6 +15,8 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Proxy
 import Control.Lens
+import Data.Monoid
+import Numeric (showIntAtBase)
 import CCC (CCC(..)
   , test1
   , test2
@@ -97,9 +99,21 @@ instance HasBoolRep () where
 instance HasBoolRep Bool where
   type Size Bool = 1
   type Card Bool = 2^1
+
+
+newtype Word2 = Word2 (Bool,Bool)
+newtype Word4 = Word4 (Word2,Word2)
+
+instance HasBoolRep Word2 where
+  type Size Word2 = 2
+  type Card Word2 = 2^2
+instance HasBoolRep Word4 where
+  type Size Word4 = 4
+  type Card Word4 = 2^4
 instance HasBoolRep Word8 where
   type Size Word8 = 8
   type Card Word8 = 2^8
+
 instance (HasBoolRep a, HasBoolRep b, KnownNat (Size a + Size b), KnownNat (Card a * Card b)) => HasBoolRep (a, b) where
   type Size (a, b) = Size a + Size b
   type Card (a, b) = Card a * Card b
@@ -109,6 +123,14 @@ instance (HasBoolRep a, HasBoolRep b, KnownNat (Size a + Size b), KnownNat (Card
 --
 type Name = String
 data BoolExp = Var Name | And BoolExp BoolExp | Or BoolExp BoolExp | Not BoolExp | Bool Bool
+  {- deriving (Show) -}
+
+instance Show BoolExp where
+  showsPrec _ (Var n) = showParen False $ showString n
+  showsPrec _ (Bool n) = showParen False $ showString (if n then "1" else "0")
+  showsPrec d (And a b) = showParen True $ showsPrec d a P.. showString "" P.. showsPrec d b
+  showsPrec d (Or a b) = showParen True $ showsPrec d a P.. showString "+" P.. showsPrec d b
+  showsPrec d (Not b) = showParen True $ showString "~" P.. showsPrec d b
 
 type TotalMap k a = (a, Map k a)
 
@@ -154,11 +176,39 @@ ev wh funcArg = (error "undefined ev") func arg
     fL = natVal (Proxy @(Size (a ~~> b)))
     aL = natVal (Proxy @(Size a))
 
-cur :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => p a (b ~~> c)
+cur :: forall p a b c. (HasBoolRep a, HasBoolRep b, HasBoolRep c, HasBoolRep (b ~~> c)) => p a (b ~~> c)
   -> (V (Size a + Size b) -> V (Size c))
   -> V (Size a)
   -> V (Size (b ~~> c))
-cur = undefined
+cur wh uncurried arg = flatten entries
+  where
+    -- TODO for [1..Card b], generate function
+    bL = natVal (Proxy @(Card b))
+    -- TODO either use (concat) or (concat . transpose) for entries
+    entries :: Vec (Card b) (V (Size c))
+    entries = fmap mkEntry (enumFromN 0)
+    -- each entry is constructed by applying our uncurried function to the given arg and the particular instance
+    -- of the b
+    mkEntry :: Integer -> V (Size c)
+    mkEntry b = res
+      where
+        bStr = makeEntryOutOf b bL
+        res = uncurried (arg ++ maybe (error "cur: wrong size") P.id (fromList $ fmap Bool bStr))
+
+
+
+-- Create a bit string for a given element and cardinality
+-- >>> makeEntryOutOf 1 8 == "001"
+makeEntryOutOf :: Integer -> Integer -> [Bool]
+makeEntryOutOf b bL = fmap charToBool $ padded
+  where
+    charToBool '1' = True
+    charToBool _   = False
+    bitString = (showIntAtBase 2 (toEnum P.. (+ 48)) b) ""
+    req = (\x -> ceiling (logBase 2 (realToFrac x)) `max` 1) bL
+    padded = padBeforeToLength req '0' bitString
+    padBeforeToLength n c xs = P.replicate (n - P.length xs) c <> xs
+
 
 uncur :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => p (a, b) c
   -> (V (Size a) -> V (Size (b ~~> c)))
@@ -172,17 +222,23 @@ tak wh = take
 drp :: forall p a b c x. (HasBoolRep a, HasBoolRep b) => p (a,b) c -> Vec (Size a + Size b) x -> Vec (Size b) x
 drp wh = drop
 
+flatten :: (KnownNat (m * n)) => Vec m (Vec n a) -> Vec (m * n) a
+flatten = maybe (error "impossible") P.id P.. fromList P.. concat P.. toList P.. fmap toList
 
 
-
-compile' :: E () Bool -> BoolExp
-compile' x = {-index 0-}undefined $ compile x undefined{-[Bool True]-}
+compile' :: HasBoolRep a => E () a -> V (Size a)
+compile' x = compile x (pure (Bool True))
 
 
 main = error "TODO"
 
 
-tb = compile (test1 :: E () (Bool ~~> Bool))
+-- id
+tb1  = compile' (test1 :: E () (Word2 ~~> Word2))
+tb1a = compile' (test1 :: E () (Word8 ~~> Word8))
+
+-- fst
+tb2 = compile' (test2 :: E () ((Word2, Word8) ~~> Word2))
 
 
 
