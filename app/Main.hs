@@ -229,9 +229,6 @@ flatten = maybe (error "impossible") P.id P.. fromList P.. concat P.. toList P..
 compile' :: HasBoolRep a => E () a -> V (Size a)
 compile' x = compile x (pure (Bool True))
 
--- TODO allow formulas that use a single value from input (provided as vars v1, v2 etc)
-checkSatisfied :: HasBoolRep a => E () Bool -> V 1 BoolExp
-checkSatisfied x = compile x (pure (Bool True))
 
 main = error "TODO"
 
