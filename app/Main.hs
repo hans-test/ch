@@ -7,7 +7,7 @@ import Prelude hiding ((.), id, take, drop, head, (++))
 import qualified Prelude                    as P
 -- import Data.Vector.Sized ((++))
 import qualified Data.Vector as V
--- import Data.Vector.Sized
+import Data.Vector.Sized
 import GHC.TypeLits
 import Data.Singletons hiding ((~~>))
 import Data.Word
@@ -18,7 +18,7 @@ import Control.Lens
 import CCC (CCC(..))
 import Data.Coerce
 import Control.Category
-import Data.Sized
+{- import Data.Sized -}
 
 
 -- import           Data.Type.Natural          (Nat (..), One, SNat, Sing (..), Two)
@@ -27,7 +27,7 @@ import Data.Sized
 
 -- Goal: provide a ZKP of "(The byte sequence S applied to T yields R) and hashing s yields H" (S being the hidden quantity)
 
-type Vec (n :: Nat) a = Sized [] n a
+type Vec (n :: Nat) a = Vector n a
 
 -- | A function, represented as a boolean matrix.
 data (~~>) :: * -> * -> *
@@ -71,7 +71,7 @@ class (HasBoolRep a, HasBoolRep b) => HasBoolRep2 a b
 class () => HasBoolRep a where
   type Size a :: Nat -- how many bits need to rep it
   type Card a :: Nat --how many elements in the set
-  size :: Sing (Size a)
+  {- size :: Sing (Size a) -}
   -- card :: p a -> Sing (Card a)
 instance HasBoolRep () where
   type Size () = 1
@@ -142,10 +142,11 @@ uncur :: () => p (a, b) c
 uncur = undefined
 
 tak :: forall p a b c x. p (a,b) c -> Vec (Size a + Size b) x -> Vec (Size a) x
-tak w xs = take fstParam xs
-  where
-    fstParam :: Sing (Size a)
-    fstParam = size
+tak = undefined
+{- tak w xs = take fstParam xs -}
+  {- where -}
+    {- fstParam :: Sing (Size a) -}
+    {- fstParam = size -}
 
 drp :: (sa ~ Size a, sb ~ Size b) => p (a,b) c -> Vec (sa + sb) x -> Vec sb x
 drp _ = undefined
