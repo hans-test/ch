@@ -1,12 +1,13 @@
 {-# LANGUAGE TypeOperators, TypeFamilies, DataKinds, GADTs, FlexibleContexts,
-MultiParamTypeClasses, RankNTypes, ConstraintKinds,
-
+MultiParamTypeClasses, RankNTypes, ConstraintKinds, StandaloneDeriving, ScopedTypeVariables,
 
 UndecidableInstances #-}
 
 import Prelude hiding ((.), id, take, drop, head, (++))
-import Data.Vector.Sized
+import qualified Prelude                    as P
+-- import Data.Vector.Sized ((++))
 import qualified Data.Vector as V
+-- import Data.Vector.Sized
 import GHC.TypeLits
 import Data.Singletons hiding ((~~>))
 import Data.Word
@@ -17,9 +18,16 @@ import Control.Lens
 import CCC (CCC(..))
 import Data.Coerce
 import Control.Category
+import Data.Sized
+
+
+-- import           Data.Type.Natural          (Nat (..), One, SNat, Sing (..), Two)
+-- import           Data.Type.Natural          (plusComm, plusSuccR, plusZR)
+-- import           Data.Type.Natural          (sNatToInt, (%:*))
+
 -- Goal: provide a ZKP of "(The byte sequence S applied to T yields R) and hashing s yields H" (S being the hidden quantity)
 
-type Vec = Vector
+type Vec (n :: Nat) a = Sized [] n a
 
 -- | A function, represented as a boolean matrix.
 data (~~>) :: * -> * -> *
@@ -60,11 +68,11 @@ instance CCC E (~~>) (,) () where
   unit = Unit
 
 class (HasBoolRep a, HasBoolRep b) => HasBoolRep2 a b
-class (KnownNat (Size a), KnownNat (Card a)) => HasBoolRep a where
+class () => HasBoolRep a where
   type Size a :: Nat -- how many bits need to rep it
   type Card a :: Nat --how many elements in the set
-  size :: p a -> Sing (Size a)
-  card :: p a -> Sing (Card a)
+  size :: Sing (Size a)
+  -- card :: p a -> Sing (Card a)
 instance HasBoolRep () where
   type Size () = 1
   type Card () = 1
@@ -113,8 +121,8 @@ compile e@Snd = \x -> drp e x
 compile (Pair f g) = \x -> compile f x ++ compile g x
 compile Unit = const $ pure $ Bool True
 
-type V s = Vec s BoolExp
-type VS a = Vec (Size a) BoolExp
+type V (s :: Nat) = Vec s BoolExp
+-- type VS a = Vec (Size a) BoolExp
 
 ev
   :: p (a ~~> b, a) b
@@ -133,11 +141,11 @@ uncur :: () => p (a, b) c
   -> V (Size c)
 uncur = undefined
 
-tak :: (sa ~ Size a, sb ~ Size b) => p (a,b) c -> Vec (sa + sb) x -> Vec sa x
-tak w = undefined
+tak :: forall p a b c x. p (a,b) c -> Vec (Size a + Size b) x -> Vec (Size a) x
+tak w xs = take fstParam xs
   where
-    fstParam :: p (a, b) c -> Proxy (Size a)
-    fstParam _ = Proxy
+    fstParam :: Sing (Size a)
+    fstParam = size
 
 drp :: (sa ~ Size a, sb ~ Size b) => p (a,b) c -> Vec (sa + sb) x -> Vec sb x
 drp _ = undefined
@@ -150,3 +158,38 @@ compile' x = {-index 0-}undefined $ compile x undefined{-[Bool True]-}
 
 
 main = error "TODO"
+
+
+
+
+
+
+
+
+
+-- ----
+-- -- type Z = 0
+-- -- type S a = a + 1
+-- data Vector (n :: Nat) (a :: *)   where
+--   Nil  :: Vector 0 a
+--   (:-) :: a -> Vector n a -> Vector (n + 1) a
+--
+-- -- | 'replicate' @n x@ is a vector of length @n@ with @x@ the value of every element.
+-- replicate :: SNat n -> a -> Vector n a
+-- replicate SZ _ = Nil
+-- replicate (SS n) a = a :- replicate n a
+--
+-- -- | 'replicate', with the length inferred.
+-- replicate' :: forall n a. SingI n => a -> Vector n a
+-- replicate' = replicate (sing :: SNat n)
+--
+-- (++) :: Vector n a -> Vector m a -> Vector (n + m) a
+-- (++) (x :- xs) ys = x :- append xs ys
+-- (++) Nil       ys = ys
+--
+-- infixr 5 :-
+-- deriving instance Show a => Show (Vector n a)
+-- deriving instance P.Ord a => P.Ord (Vector n a)
+-- instance (Eq a) => Eq (Vector n a) where
+--   Nil == Nil = True
+--   (x :- xs) == (y :- ys) = x == y && xs == ys
