@@ -56,18 +56,29 @@ instance (HasBoolRep a, HasBoolRep b
 
 data E :: * -> * -> * where
   Id    :: E a a
-  Comp  :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => E b c -> E a b -> E a c
-  Eval  :: (HasBoolRep a, HasBoolRep b, HasBoolRep (a ~~> b)) => E (a ~~> b, a) b
+  Comp  :: (HasBoolRep a, HasBoolRep b, HasBoolRep c)
+    => E b c -> E a b -> E a c
+  Eval  :: (HasBoolRep a, HasBoolRep b, HasBoolRep (a ~~> b))
+    => E (a ~~> b, a) b
     -- R ^esult waits for a and a table, then treats as a number in table lookup
-  Curry :: (HasBoolRep a, HasBoolRep b, HasBoolRep c, HasBoolRep (a, b)) => E (a, b) c -> E a (b ~~> c)
+  Curry :: (HasBoolRep a, HasBoolRep b, HasBoolRep c, HasBoolRep (a, b))
+    => E (a, b) c -> E a (b ~~> c)
     -- result waits for a, then makes a table with all poss b, using an evaluated form of the given expr
     -- which is (Vec (Size a + Size b) BoolExp -> Vec Size c BoolExp)
-  Uncurry :: (HasBoolRep a, HasBoolRep b, HasBoolRep c, HasBoolRep (b ~~> c)) => E a (b ~~> c) -> E (a, b) c
+  Uncurry :: (HasBoolRep a, HasBoolRep b, HasBoolRep c, HasBoolRep (b ~~> c))
+    => E a (b ~~> c) -> E (a, b) c
     -- Given a and b, runs the given for a and looks up b in table (specialized version of Eval?)
-  Fst   :: (HasBoolRep a, HasBoolRep b) => E (a, b) a
-  Snd   :: (HasBoolRep a, HasBoolRep b) => E (a, b) b
-  Pair  :: (HasBoolRep a, HasBoolRep b, HasBoolRep c) => E a b -> E a c -> E a (b,c)
-  Unit  :: HasBoolRep a => E a ()
+  Fst   :: (HasBoolRep a, HasBoolRep b)
+    => E (a, b) a
+  Snd   :: (HasBoolRep a, HasBoolRep b)
+    => E (a, b) b
+  Pair  :: (HasBoolRep a, HasBoolRep b, HasBoolRep c)
+    => E a b -> E a c -> E a (b,c)
+  Unit  :: HasBoolRep a
+    => E a ()
+
+  -- E/CCC encoding
+  -- 4 bits for the constructor, then 6 bits for length (for bracketting)
 
 {- instance Category E where -}
 
